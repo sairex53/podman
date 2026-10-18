@@ -244,6 +244,11 @@ func (r *MissingRuntime) RuntimeInfo() (*define.ConmonInfo, *define.OCIRuntimeIn
 	return nil, &ocirt, nil
 }
 
+// VersionInfo returns the missing runtime's placeholder version.
+func (r *MissingRuntime) versionInfo() (string, string, error) {
+	return "missing", "missing", nil
+}
+
 // RuntimeFeatures returns an empty string on the missing runtime.
 func (r *MissingRuntime) RuntimeFeatures() string {
 	return ""

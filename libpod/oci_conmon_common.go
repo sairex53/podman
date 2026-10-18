@@ -883,16 +883,12 @@ func (r *ConmonOCIRuntime) PersistDirectoryPath(ctr *Container) (string, error) 
 
 // RuntimeInfo provides information on the runtime.
 func (r *ConmonOCIRuntime) RuntimeInfo() (*define.ConmonInfo, *define.OCIRuntimeInfo, error) {
+	conmonVersion, runtimeVersion, err := r.versionInfo()
+	if err != nil {
+		return nil, nil, err
+	}
 	runtimePackage := version.Package(r.path)
 	conmonPackage := version.Package(r.conmonPath)
-	runtimeVersion, err := r.getOCIRuntimeVersion()
-	if err != nil {
-		return nil, nil, fmt.Errorf("getting version of OCI runtime %s: %w", r.name, err)
-	}
-	conmonVersion, err := r.getConmonVersion()
-	if err != nil {
-		return nil, nil, fmt.Errorf("getting conmon version: %w", err)
-	}
 
 	conmon := define.ConmonInfo{
 		Package: conmonPackage,
@@ -907,6 +903,20 @@ func (r *ConmonOCIRuntime) RuntimeInfo() (*define.ConmonInfo, *define.OCIRuntime
 		Features: r.featuresProvider(),
 	}
 	return &conmon, &ocirt, nil
+}
+
+// VersionInfo returns the versions of conmon and the OCI runtime without
+// looking up the packages that own their executables.
+func (r *ConmonOCIRuntime) versionInfo() (conmonVersion, runtimeVersion string, err error) {
+	runtimeVersion, err = r.getOCIRuntimeVersion()
+	if err != nil {
+		return "", "", fmt.Errorf("getting version of OCI runtime %s: %w", r.name, err)
+	}
+	conmonVersion, err = r.getConmonVersion()
+	if err != nil {
+		return "", "", fmt.Errorf("getting conmon version: %w", err)
+	}
+	return conmonVersion, runtimeVersion, nil
 }
 
 // Wait for a container which has been sent a signal to stop

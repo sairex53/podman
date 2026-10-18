@@ -26,6 +26,45 @@ import (
 	"tags.cncf.io/container-device-interface/pkg/cdi"
 )
 
+// RuntimeVersionInfo contains only the host and runtime details required by
+// the API version endpoint.
+type RuntimeVersionInfo struct {
+	Kernel            string
+	Distribution      define.DistributionInfo
+	ConmonVersion     string
+	OCIRuntimeName    string
+	OCIRuntimeVersion string
+}
+
+// VersionInfo returns the small set of host and runtime details needed by the
+// API version endpoint. Unlike Info, it does not query package databases or
+// inspect the container store.
+func (r *Runtime) VersionInfo() (*RuntimeVersionInfo, error) {
+	kernel, err := util.ReadKernelVersion()
+	if err != nil {
+		return nil, fmt.Errorf("reading kernel version: %w", err)
+	}
+
+	versionInfo, ok := r.defaultOCIRuntime.(interface {
+		versionInfo() (conmonVersion, runtimeVersion string, err error)
+	})
+	if !ok {
+		return nil, fmt.Errorf("OCI runtime %s does not provide version info", r.defaultOCIRuntime.Name())
+	}
+	conmonVersion, runtimeVersion, err := versionInfo.versionInfo()
+	if err != nil {
+		return nil, fmt.Errorf("getting runtime version info: %w", err)
+	}
+
+	return &RuntimeVersionInfo{
+		Kernel:            kernel,
+		Distribution:      r.GetHostDistributionInfo(),
+		ConmonVersion:     conmonVersion,
+		OCIRuntimeName:    r.defaultOCIRuntime.Name(),
+		OCIRuntimeVersion: runtimeVersion,
+	}, nil
+}
+
 // Info returns the store and host information
 func (r *Runtime) info() (*define.Info, error) {
 	info := define.Info{}
