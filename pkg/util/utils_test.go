@@ -726,6 +726,36 @@ func TestProcessOptions(t *testing.T) {
 			expected:   []string{"nodev", "nosuid", "rprivate", "rw", "size=512m", "tmpcopyup", "noatime"},
 		},
 		{
+			name:     "tmpfs uid and gid",
+			options:  []string{"rw", "uid=1000", "gid=2000"},
+			isTmpfs:  true,
+			expected: []string{"nodev", "nosuid", "rprivate", "rw", "uid=1000", "gid=2000", "tmpcopyup"},
+		},
+		{
+			name:       "uid allowed only with tmpfs",
+			sourcePath: "/path/to/source",
+			options:    []string{"uid=1000"},
+			expectErr:  true,
+		},
+		{
+			name:       "gid allowed only with tmpfs",
+			sourcePath: "/path/to/source",
+			options:    []string{"gid=1000"},
+			expectErr:  true,
+		},
+		{
+			name:      "duplicate tmpfs uid",
+			options:   []string{"uid=1000", "uid=2000"},
+			isTmpfs:   true,
+			expectErr: true,
+		},
+		{
+			name:      "duplicate tmpfs gid",
+			options:   []string{"gid=1000", "gid=2000"},
+			isTmpfs:   true,
+			expectErr: true,
+		},
+		{
 			name:       "duplicate idmap option",
 			sourcePath: "/path/to/source",
 			options:    []string{"idmap", "idmap"},
