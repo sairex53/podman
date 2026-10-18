@@ -423,18 +423,25 @@ func BecomeRootInUserNS(stateDir string) (bool, int, error) {
 }
 
 // isPauseProcess checks if the given PID has _PODMAN_PAUSE=1 in its environment.
-// It is a best-effort check; any errors are silently ignored and it returns false.
-func isPauseProcess(pid int) bool {
+// It returns an error when the environment cannot be read, so callers can avoid
+// treating an inaccessible process as a stale PID.
+func isPauseProcess(pid int) (bool, error) {
 	data, err := os.ReadFile(fmt.Sprintf("/proc/%d/environ", pid))
 	if err != nil {
-		return false
+		return false, err
 	}
 	for entry := range bytes.SplitSeq(data, []byte{0}) {
 		if string(entry) == "_PODMAN_PAUSE=1" {
-			return true
+			return true, nil
 		}
 	}
-	return false
+	return false, nil
+}
+
+// isDefinitelyNotPauseProcess reports whether a failed process check proves
+// that the PID file is stale. Other read errors do not prove that the PID is stale.
+func isDefinitelyNotPauseProcess(isPause bool, checkErr error, processGone bool) bool {
+	return (checkErr == nil && !isPause) || (errors.Is(checkErr, os.ErrNotExist) && processGone)
 }
 
 // TryJoinFromFilePaths attempts to join the namespaces of the pid files in paths.
@@ -462,11 +469,16 @@ func TryJoinFromFilePaths(stateDir string, paths []string) (bool, int, error) {
 			if err == nil {
 				return joined, ret, nil
 			}
-			if !isPauseProcess(pid) {
+			isPause, checkErr := isPauseProcess(pid)
+			processGone := errors.Is(checkErr, os.ErrNotExist) && errors.Is(unix.Kill(pid, 0), unix.ESRCH)
+			if isDefinitelyNotPauseProcess(isPause, checkErr, processGone) {
 				logrus.Warningf("pause.pid file refers to PID %d which is not a pause process, the process may have exited and the PID been recycled. Removing %s", pid, path)
 				os.Remove(path)
 				lastErr = err
 				continue
+			}
+			if checkErr != nil {
+				logrus.Warnf("cannot inspect environment for PID %d; keeping %s: %v", pid, path, checkErr)
 			}
 			lastErr = err
 		}

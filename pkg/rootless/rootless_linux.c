@@ -643,7 +643,8 @@ can_use_shortcut (char **argv)
 }
 
 /* Best-effort check: read /proc/<pid>/environ and look for _PODMAN_PAUSE=1.
-   Returns 1 if found, 0 if not found or on any error.  */
+   Returns 1 if found, 0 if readable but not found (or the process is gone),
+   and -1 if the environment cannot be checked.  */
 static int
 is_pause_process (long pid)
 {
@@ -653,20 +654,31 @@ is_pause_process (long pid)
   const size_t buf_size = 4096;
   ssize_t n;
 
-  if (asprintf (&environ_path, "/proc/%ld/environ", pid) < 0)
+  if (pid <= 0)
     return 0;
+
+  if (asprintf (&environ_path, "/proc/%ld/environ", pid) < 0)
+    return -1;
 
   buf = malloc (buf_size + 1);
   if (buf == NULL)
-    return 0;
+    return -1;
 
   fd = open (environ_path, O_RDONLY | O_CLOEXEC);
   if (fd < 0)
-    return 0;
+    {
+      /* ENOENT can also mean that procfs hides a live process.  Only treat
+         it as stale when kill confirms that the PID no longer exists.  */
+      if (errno == ENOENT && kill (pid, 0) < 0 && errno == ESRCH)
+        return 0;
+      return -1;
+    }
 
   /* Read in chunks and search for the null-delimited key=value entry.  */
   n = TEMP_FAILURE_RETRY (read (fd, buf, buf_size));
-  if (n <= 0)
+  if (n < 0)
+    return -1;
+  if (n == 0)
     return 0;
   buf[n] = '\0';
 
@@ -681,15 +693,19 @@ is_pause_process (long pid)
 }
 
 /* If the process referred to by pause.pid is not actually a pause process,
-   it means the PID was recycled.  Warn the user and remove the stale file.  */
+   it means the PID was recycled.  Only remove the file when this is known.  */
 static void
 check_stale_pause_pid (long pid, const char *path)
 {
-  if (!is_pause_process (pid))
+  int pause_process = is_pause_process (pid);
+
+  if (pause_process == 0)
     {
       fprintf (stderr, "pause.pid file refers to PID %ld which is not a pause process, the process may have exited and the PID been recycled. Removing %s\n", pid, path);
       unlink (path);
     }
+  else if (pause_process < 0)
+    fprintf (stderr, "cannot verify pause process %ld; keeping %s\n", pid, path);
 }
 
 static int
